@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Oval Tool</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --green: #009152;
+    --cream: #F5F0E8;
+    --bg: #1a1a1a;
+    --panel-bg: #2a2a2a;
+    --panel-border: #3a3a3a;
+    --panel-text: #e8e8e8;
+    --panel-muted: #888;
+    --panel-accent: #009152;
+    --panel-thumb: #009152;
+    --panel-track: #3a3a3a;
+    --panel-hover: #333;
+    --radius: 12px;
+    --font: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  }
+
+  body {
+    background: var(--bg);
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    font-family: var(--font);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ── CANVAS ── */
+  #canvas-wrap {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #canvas {
+    display: block;
+    box-shadow: 0 4px 40px rgba(0,0,0,0.7);
+  }
+
+  /* ── PANEL ── */
+  #panel {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 260px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
+    z-index: 100;
+    user-select: none;
+    overflow: hidden;
+    transition: box-shadow 0.2s;
+  }
+
+  #panel.dragging {
+    box-shadow: 0 16px 60px rgba(0,0,0,0.8), 0 4px 16px rgba(0,0,0,0.5);
+    opacity: 0.97;
+  }
+
+  #panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px 10px;
+    cursor: grab;
+    border-bottom: 1px solid var(--panel-border);
+  }
+
+  #panel-header:active { cursor: grabbing; }
+
+  .panel-title {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--panel-muted);
+  }
+
+  .panel-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--panel-accent);
+    opacity: 0.8;
+  }
+
+  /* Folders */
+  .folder {
+    border-bottom: 1px solid var(--panel-border);
+  }
+
+  .folder:last-child { border-bottom: none; }
+
+  .folder-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .folder-header:hover { background: var(--panel-hover); }
+
+  .folder-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--panel-text);
+    letter-spacing: 0.04em;
+  }
+
+  .folder-arrow {
+    font-size: 9px;
+    color: var(--panel-muted);
+    transition: transform 0.2s;
+  }
+
+  .folder.collapsed .folder-arrow { transform: rotate(-90deg); }
+  .folder.collapsed .folder-body { display: none; }
+
+  .folder-body {
+    padding: 4px 0 10px;
+  }
+
+  /* Controls */
+  .control {
+    padding: 6px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .control-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .control-label {
+    font-size: 10px;
+    color: var(--panel-muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .control-value {
+    font-size: 10px;
+    color: var(--panel-text);
+    font-variant-numeric: tabular-nums;
+    min-width: 28px;
+    text-align: right;
+  }
+
+  /* Slider */
+  .dial-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--panel-track);
+    outline: none;
+    cursor: pointer;
+    position: relative;
+  }
+
+  .dial-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--panel-thumb);
+    cursor: pointer;
+    box-shadow: 0 0 0 2px rgba(0,145,82,0.25);
+    transition: box-shadow 0.15s, transform 0.1s;
+  }
+
+  .dial-slider::-webkit-slider-thumb:hover {
+    box-shadow: 0 0 0 4px rgba(0,145,82,0.3);
+    transform: scale(1.15);
+  }
+
+  .dial-slider::-webkit-slider-thumb:active {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 6px rgba(0,145,82,0.2);
+  }
+
+  /* Toggle */
+  .toggle-wrap {
+    display: flex;
+    gap: 2px;
+    background: var(--panel-track);
+    border-radius: 6px;
+    padding: 2px;
+  }
+
+  .toggle-btn {
+    flex: 1;
+    padding: 4px 6px;
+    border: none;
+    background: transparent;
+    color: var(--panel-muted);
+    font-family: var(--font);
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    letter-spacing: 0.05em;
+  }
+
+  .toggle-btn.active {
+    background: var(--panel-accent);
+    color: white;
+  }
+
+  /* Action button */
+  .action-btn {
+    width: calc(100% - 28px);
+    margin: 0 14px;
+    padding: 7px;
+    background: transparent;
+    border: 1px solid var(--panel-border);
+    color: var(--panel-text);
+    font-family: var(--font);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+
+  .action-btn:hover {
+    background: var(--panel-hover);
+    border-color: var(--panel-accent);
+    color: var(--panel-accent);
+  }
+
+  .action-btn:active {
+    background: var(--panel-accent);
+    color: white;
+  }
+
+  /* Seed display */
+  #seed-display {
+    font-size: 9px;
+    color: var(--panel-muted);
+    padding: 8px 14px 4px;
+    letter-spacing: 0.06em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── CANVAS BG toggle indicator ── */
+  #bg-label {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    font-family: var(--font);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #555;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="canvas-wrap">
+  <canvas id="canvas"></canvas>
+</div>
+
+<div id="panel">
+  <div id="panel-header">
+    <span class="panel-title">Specsavers Lens Tool</span>
+    <div class="panel-dot"></div>
+  </div>
+
+  <!-- Ovals -->
+  <div class="folder" id="folder-ovals">
+    <div class="folder-header" onclick="toggleFolder('folder-ovals')">
+      <span class="folder-name">Ovals</span>
+      <span class="folder-arrow">▾</span>
+    </div>
+    <div class="folder-body">
+      <div class="control">
+        <div class="control-row">
+          <span class="control-label">Count</span>
+          <span class="control-value" id="val-count">4</span>
+        </div>
+        <input type="range" class="dial-slider" id="sl-count" min="1" max="24" step="1" value="4">
+      </div>
+      <div class="control">
+        <div class="control-row">
+          <span class="control-label">Scale</span>
+          <span class="control-value" id="val-scale">1.0</span>
+        </div>
+        <input type="range" class="dial-slider" id="sl-scale" min="0.1" max="5" step="0.05" value="1">
+      </div>
+      <div class="control">
+        <div class="control-row">
+          <span class="control-label">Aspect</span>
+          <span class="control-value" id="val-aspect">0.55</span>
+        </div>
+        <input type="range" class="dial-slider" id="sl-aspect" min="0.15" max="1.0" step="0.01" value="0.55">
+      </div>
+    </div>
+  </div>
+
+  <!-- Variance -->
+  <div class="folder" id="folder-variance">
+    <div class="folder-header" onclick="toggleFolder('folder-variance')">
+      <span class="folder-name">Variance</span>
+      <span class="folder-arrow">▾</span>
+    </div>
+    <div class="folder-body">
+      <div class="control">
+        <div class="control-row">
+          <span class="control-label">Angle</span>
+          <span class="control-value" id="val-angle">0.5</span>
+        </div>
+        <input type="range" class="dial-slider" id="sl-angle" min="0" max="1" step="0.01" value="0.5">
+      </div>
+      <div class="control">
+        <div class="control-row">
+          <span class="control-label">Position</span>
+          <span class="control-value" id="val-pos">0.5</span>
+        </div>
+        <input type="range" class="dial-slider" id="sl-pos" min="0" max="1" step="0.01" value="0.5">
+      </div>
+      <div class="control">
+        <div class="control-row">
+          <span class="control-label">Size Var</span>
+          <span class="control-value" id="val-sizevar">0.4</span>
+        </div>
+        <input type="range" class="dial-slider" id="sl-sizevar" min="0" max="1" step="0.01" value="0.4">
+      </div>
+    </div>
+  </div>
+
+  <!-- Blending -->
+  <div class="folder" id="folder-blend">
+    <div class="folder-header" onclick="toggleFolder('folder-blend')">
+      <span class="folder-name">Blending</span>
+      <span class="folder-arrow">▾</span>
+    </div>
+    <div class="folder-body">
+      <div class="control">
+        <div class="control-row">
+          <span class="control-label">Mode</span>
+        </div>
+        <div class="toggle-wrap">
+          <button class="toggle-btn" id="btn-normal" onclick="setMode('normal')">Normal</button>
+          <button class="toggle-btn active" id="btn-exclude" onclick="setMode('exclude')">Exclude</button>
+          <button class="toggle-btn" id="btn-multiply" onclick="setMode('multiply')">Multiply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Canvas -->
+  <div class="folder" id="folder-canvas">
+    <div class="folder-header" onclick="toggleFolder('folder-canvas')">
+      <span class="folder-name">Canvas</span>
+      <span class="folder-arrow">▾</span>
+    </div>
+    <div class="folder-body">
+      <div class="control">
+        <div class="control-row">
+          <span class="control-label">Format</span>
+        </div>
+        <div class="toggle-wrap">
+          <button class="toggle-btn active" id="btn-fmt-16x9" onclick="setFormat('16x9')">16:9</button>
+          <button class="toggle-btn" id="btn-fmt-1x1" onclick="setFormat('1x1')">1:1</button>
+          <button class="toggle-btn" id="btn-fmt-9x16" onclick="setFormat('9x16')">9:16</button>
+        </div>
+      </div>
+      <div class="control">
+        <div class="control-row">
+          <span class="control-label">Background</span>
+        </div>
+        <div class="toggle-wrap">
+          <button class="toggle-btn active" id="btn-bg-cream" onclick="setBg('cream')">Cream</button>
+          <button class="toggle-btn" id="btn-bg-white" onclick="setBg('white')">White</button>
+          <button class="toggle-btn" id="btn-bg-dark" onclick="setBg('dark')">Dark</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="folder" id="folder-actions">
+    <div class="folder-header" onclick="toggleFolder('folder-actions')">
+      <span class="folder-name">Actions</span>
+      <span class="folder-arrow">▾</span>
+    </div>
+    <div class="folder-body">
+      <div id="seed-display">Seed: <span id="seed-val">—</span></div>
+      <div style="padding: 4px 0; display: flex; flex-direction: column; gap: 6px;">
+        <button class="action-btn" onclick="randomise()">↻ Randomise</button>
+        <button class="action-btn" onclick="exportCanvas()">↓ Export PNG</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="bg-label">Press R to randomise · E to export</div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────────────────────────
+const state = {
+  count: 4,
+  scale: 1.0,
+  aspect: 0.55,
+  angle: 0.5,
+  pos: 0.5,
+  sizevar: 0.4,
+  mode: 'exclude',
+  bg: 'cream',
+  format: '16x9',
+  seed: Math.random() * 99999 | 0,
+  ovals: [],
+};
+
+const BG_COLORS = {
+  cream: '#F2EDE2',
+  white: '#FFFFFF',
+  dark: '#002619',
+};
+
+const FORMATS = {
+  '16x9': [16, 9],
+  '1x1':  [1,  1],
+  '9x16': [9,  16],
+};
+
+const GREEN = '#009152';
+
+// ── SEEDED RNG ─────────────────────────────────────────────────────────────
+function seededRandom(seed) {
+  let s = seed;
+  return function() {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
+// ── CANVAS SETUP ───────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+const PADDING = 48; // px gap from viewport edges
+
+function getCanvasSize() {
+  const [ratioW, ratioH] = FORMATS[state.format];
+  const vw = window.innerWidth  - PADDING * 2;
+  const vh = window.innerHeight - PADDING * 2;
+  // Fit inside viewport maintaining ratio
+  let w, h;
+  if (vw / vh > ratioW / ratioH) {
+    // viewport wider than ratio — constrain by height
+    h = vh;
+    w = vh * (ratioW / ratioH);
+  } else {
+    w = vw;
+    h = vw * (ratioH / ratioW);
+  }
+  return [Math.round(w), Math.round(h)];
+}
+
+function applyCanvasSize() {
+  const [w, h] = getCanvasSize();
+  canvas.width = w;
+  canvas.height = h;
+  canvas.style.width  = w + 'px';
+  canvas.style.height = h + 'px';
+}
+
+function resize() {
+  applyCanvasSize();
+  generateOvals();
+  draw();
+}
+
+window.addEventListener('resize', resize);
+
+// ── GENERATE OVALS ─────────────────────────────────────────────────────────
+function generateOvals() {
+  const rng = seededRandom(state.seed);
+  const W = canvas.width;
+  const H = canvas.height;
+  const baseR = Math.min(W, H) * 0.18 * state.scale;
+  state.ovals = [];
+
+  for (let i = 0; i < state.count; i++) {
+    const svar = 1 + (rng() - 0.5) * 2 * state.sizevar;
+    const rx = baseR * svar;
+    const ry = rx * state.aspect;
+
+    const spread = state.pos;
+    const cx = (0.5 + (rng() - 0.5) * 1.6 * spread) * W;
+    const cy = (0.5 + (rng() - 0.5) * 1.6 * spread) * H;
+    const angle = (rng() - 0.5) * Math.PI * 2 * state.angle;
+
+    state.ovals.push({ cx, cy, rx, ry, angle });
+  }
+
+  document.getElementById('seed-val').textContent = state.seed;
+}
+
+// ── DRAW ───────────────────────────────────────────────────────────────────
+function draw() {
+  const W = canvas.width;
+  const H = canvas.height;
+  const bgColor = BG_COLORS[state.bg];
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, W, H);
+
+  if (state.mode === 'exclude') {
+    const off = document.createElement('canvas');
+    off.width = W; off.height = H;
+    const oc = off.getContext('2d');
+
+    for (const o of state.ovals) {
+      oc.save();
+      oc.translate(o.cx, o.cy);
+      oc.rotate(o.angle);
+      oc.globalCompositeOperation = 'xor';
+      oc.beginPath();
+      oc.ellipse(0, 0, o.rx, o.ry, 0, 0, Math.PI * 2);
+      oc.fillStyle = GREEN;
+      oc.fill();
+      oc.restore();
+    }
+
+    ctx.drawImage(off, 0, 0);
+    return;
+  }
+
+  for (const o of state.ovals) {
+    ctx.save();
+    ctx.translate(o.cx, o.cy);
+    ctx.rotate(o.angle);
+    ctx.globalCompositeOperation = state.mode === 'multiply' ? 'multiply' : 'source-over';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, o.rx, o.ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = GREEN;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+// ── CONTROLS ───────────────────────────────────────────────────────────────
+function bindSlider(id, stateKey, valId, decimals, regenerate) {
+  const slider = document.getElementById(id);
+  const valEl  = document.getElementById(valId);
+  function updateTrack() {
+    const pct = (slider.value - slider.min) / (slider.max - slider.min) * 100;
+    slider.style.background = `linear-gradient(to right, #009152 ${pct}%, #3a3a3a ${pct}%)`;
+  }
+  slider.addEventListener('input', () => {
+    state[stateKey] = parseFloat(slider.value);
+    valEl.textContent = state[stateKey].toFixed(decimals);
+    updateTrack();
+    if (regenerate) generateOvals();
+    draw();
+  });
+  updateTrack();
+}
+
+bindSlider('sl-count',   'count',   'val-count',   0, true);
+bindSlider('sl-scale',   'scale',   'val-scale',   1, true);
+bindSlider('sl-aspect',  'aspect',  'val-aspect',  2, true);
+bindSlider('sl-angle',   'angle',   'val-angle',   2, true);
+bindSlider('sl-pos',     'pos',     'val-pos',     2, true);
+bindSlider('sl-sizevar', 'sizevar', 'val-sizevar', 2, true);
+
+function setMode(mode) {
+  state.mode = mode;
+  ['normal','exclude','multiply'].forEach(m =>
+    document.getElementById('btn-' + m).classList.toggle('active', m === mode)
+  );
+  draw();
+}
+
+function setBg(bg) {
+  state.bg = bg;
+  ['cream','white','dark'].forEach(b =>
+    document.getElementById('btn-bg-' + b).classList.toggle('active', b === bg)
+  );
+  draw();
+}
+
+function setFormat(fmt) {
+  state.format = fmt;
+  ['16x9','1x1','9x16'].forEach(f =>
+    document.getElementById('btn-fmt-' + f).classList.toggle('active', f === fmt)
+  );
+  applyCanvasSize();
+  generateOvals();
+  draw();
+}
+
+function randomise() {
+  state.seed = Math.random() * 99999 | 0;
+  generateOvals();
+  draw();
+}
+
+function exportCanvas() {
+  const link = document.createElement('a');
+  link.download = `ovals-${state.format}-${state.seed}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+// ── FOLDER TOGGLE ──────────────────────────────────────────────────────────
+function toggleFolder(id) {
+  document.getElementById(id).classList.toggle('collapsed');
+}
+
+// ── PANEL DRAG ─────────────────────────────────────────────────────────────
+const panel = document.getElementById('panel');
+let dragging = false, dx = 0, dy = 0;
+
+document.getElementById('panel-header').addEventListener('mousedown', e => {
+  dragging = true;
+  panel.classList.add('dragging');
+  const rect = panel.getBoundingClientRect();
+  dx = e.clientX - rect.left;
+  dy = e.clientY - rect.top;
+  e.preventDefault();
+});
+
+document.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  panel.style.left  = (e.clientX - dx) + 'px';
+  panel.style.top   = (e.clientY - dy) + 'px';
+  panel.style.right = 'auto';
+});
+
+document.addEventListener('mouseup', () => {
+  dragging = false;
+  panel.classList.remove('dragging');
+});
+
+// ── KEYBOARD ──────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (document.activeElement.tagName === 'INPUT') return;
+  if (e.key === 'r' || e.key === 'R') randomise();
+  if (e.key === 'e' || e.key === 'E') exportCanvas();
+});
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+resize();
+</script>
+</body>
+</html>
